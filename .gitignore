@@ -1,0 +1,5 @@
+# 经验库（含真实踩坑经验，可能含本地路径/命令，不提交）
+experience.jsonl
+
+# 测试临时文件
+_test-store.jsonl
