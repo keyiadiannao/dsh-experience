@@ -1,5 +1,9 @@
 # dsh-experience
 
+[![CI](https://img.shields.io/github/actions/workflow/status/keyiadiannao/dsh-experience/ci.yml?branch=master)](https://github.com/keyiadiannao/dsh-experience/actions)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-server-blue)](https://modelcontextprotocol.io)
+
 一个**跨会话经验知识库**(自主进化)。它把 agent 在任务中踩过的坑、探索出的解决方案,
 沉淀成可复用的"问题 → 解决方案"经验,让模型在**新会话遇到类似问题时**检索并复用——
 不重新训练,越用越强。
@@ -84,4 +88,22 @@ mcp__experience__search_experience("git push GitHub TLS 超时怎么办")
 }
 ```
 
-测试:`node test.mjs`(分词 / 检索 / 持久化)。
+## 诚实局限
+
+- **"Coach mode" 自动注入尚未实现**:当前是"工具触发"检索——agent 遇到问题时**主动**调
+  `search_experience`。完整闭环("工具失败 → 自动检索 → 注入短暂建议 → 成功后提取")需要
+  harness hook(`execute.after` / `PostToolUseFailure`),尚未接入;
+- **并发**:写入已用进程内锁 + 原子改名 + 唯一临时名,单进程安全;但**多进程**共享同一份
+  `experience.jsonl` 仍可能丢更新,生产级应换成 SQLite + WAL;
+- **语义检索依赖本地 Python 服务**:`embed-server.py`(bge-large-zh)未启动时自动降级为词法,
+  但词法对同义改写、跨语言召回弱;本地 embedding 服务有部署门槛;
+- **提取用 flash**:`extract.mjs` 离线批量提取时调 DeepSeek flash,提取质量受模型能力限制;
+  且**只在成功恢复后**提取才有意义——失败的尝试不该污染经验库。
+
+## 测试
+
+`node test.mjs`(分词 / 检索 / 持久化 / 并发写不丢更新)。
+
+## License
+
+MIT

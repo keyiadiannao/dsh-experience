@@ -4,6 +4,7 @@
   "description": "Cross-session experience knowledge base for AI agents: extracts 'problem -> solution' lessons from past sessions and lets the agent retrieve them when facing similar problems. Self-evolving: new experiences accumulate as tasks run.",
   "type": "module",
   "main": "index.mjs",
+  "scripts": { "test": "node test.mjs" },
   "license": "MIT",
   "engines": { "node": ">=22.19" },
   "keywords": ["deepseek", "memory", "knowledge-base", "mcp", "experience", "self-evolving", "agent"]
