@@ -15,7 +15,7 @@
 import readline from 'node:readline'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loadStore, search, addExperience } from './store.mjs'
+import { loadStore, search, addExperience, ensureEmbeddings } from './store.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const STORE = path.join(HERE, 'experience.jsonl')
@@ -83,6 +83,14 @@ async function callTool(name, args = {}) {
       return { content: [{ type: 'text', text: `unknown tool: ${name}` }], isError: true }
   }
 }
+
+// ---- best-effort startup backfill ----
+// Repair any missing persisted embeddings once at startup (the embed service may
+// have been down when an earlier add_experience ran).  Fire-and-forget: search()
+// degrades per-doc to lexical while this is pending, so it never blocks serving.
+ensureEmbeddings(STORE)
+  .then((n) => { if (n > 0) process.stderr.write(`[dsh-experience] backfilled ${n} embedding(s)\n`) })
+  .catch(() => {})
 
 // ---- stdio JSON-RPC ----
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })

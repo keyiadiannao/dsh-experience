@@ -37,6 +37,20 @@ console.log('--- 持久化 ---')
 const reloaded = loadStore(tmp)
 ok(reloaded.length === 2, '重新加载后仍 2 条（持久化）')
 
+console.log('--- 并发写不丢更新 ---')
+{
+  const cfile = path.join(path.dirname(fileURLToPath(import.meta.url)), '_test-concurrent.jsonl')
+  try { fs.unlinkSync(cfile) } catch { /* ignore */ }
+  const N = 4
+  const problems = ['zstd 解码 session 失败', 'PowerShell 写文件带 BOM', 'GitHub 代理连接超时', 'npm install 权限被拒绝']
+  await Promise.all(
+    problems.map((p, i) => addExperience(cfile, { problem: p, solution: `方案 ${i}：${p}`, keywords: ['并发'], sourceSession: 'c' }))
+  )
+  const finalStore = loadStore(cfile)
+  ok(finalStore.length === N, `并发 ${N} 条 add 全部落盘（不丢更新，实际 ${finalStore.length}）`)
+  try { fs.unlinkSync(cfile) } catch { /* ignore */ }
+}
+
 try { fs.unlinkSync(tmp) } catch { /* ignore */ }
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail > 0 ? 1 : 0)

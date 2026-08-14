@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 
 /**
  * store.mjs - experience knowledge base: load/save/search.  Zero dependencies.
@@ -131,6 +132,10 @@ export async function embedQueryOnly(query) {
  * re-embeds the whole corpus.  Returns number embedded, or -1 if service down.
  */
 export async function ensureEmbeddings(file) {
+  return withStoreLock(() => ensureEmbeddingsInner(file))
+}
+
+async function ensureEmbeddingsInner(file) {
   const store = loadStore(file)
   const missing = store.filter((e) => !Array.isArray(e.embedding))
   if (missing.length === 0) return 0
@@ -152,15 +157,38 @@ export function loadStore(file) {
   return out
 }
 
+// ---- write serialization (single process) ----
+// The store is a whole-file JSONL; addExperience / ensureEmbeddings do an
+// unlocked read -> modify -> write.  Within one process the async MCP handlers
+// can interleave, so serialize those transactions with a promise chain.
+// (Cross-process writers still need a real file lock / SQLite; unique temp names
+// below prevent cross-process temp-name collisions but not lost updates.)
+let writeChain = Promise.resolve()
+export function withStoreLock(fn) {
+  const run = writeChain.then(fn, fn)
+  writeChain = run.catch(() => {})
+  return run
+}
+
 export function saveStore(file, experiences) {
-  // atomic write: temp + rename, so concurrent readers never see a torn file
+  // atomic write: UNIQUE temp + rename, so concurrent readers never see a torn
+  // file AND concurrent writers never collide on a shared temp name.
   const content = experiences.map((e) => JSON.stringify(e)).join('\n') + (experiences.length ? '\n' : '')
-  const tmp = file + '.tmp'
-  fs.writeFileSync(tmp, content, 'utf8')
-  fs.renameSync(tmp, file)
+  const tmp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`
+  try {
+    fs.writeFileSync(tmp, content, 'utf8')
+    fs.renameSync(tmp, file)
+  } catch (err) {
+    try { fs.unlinkSync(tmp) } catch { /* ignore cleanup failure */ }
+    throw err
+  }
 }
 
 export async function addExperience(file, exp, idGen = Date.now) {
+  return withStoreLock(() => addExperienceInner(file, exp, idGen))
+}
+
+async function addExperienceInner(file, exp, idGen = Date.now) {
   const store = loadStore(file)
   // near-identical problem already present?
   const dup = store.find((e) => similarity(e.problem, exp.problem) > 0.7)
@@ -208,23 +236,34 @@ export async function search(store, query, k = 5) {
   const maxLex = Math.max(...lexScores, 1e-6)
 
   // semantic scores: embed ONLY the query, reuse persisted doc embeddings
-  // (ensureEmbeddings() precomputes them; no corpus re-embedding per query)
+  // (ensureEmbeddings() precomputes them; no corpus re-embedding per query).
+  // If only SOME docs are embedded (the embed service was down during an insert),
+  // rank embedded docs semantically and the rest lexically — one missing vector
+  // must not disable semantic search for the whole store.
   let semScores = null
-  if (store.length > 0 && store.every((e) => Array.isArray(e.embedding))) {
+  if (store.length > 0 && store.some((e) => Array.isArray(e.embedding))) {
     const qvec = await embedQueryOnly(query)
-    if (qvec) semScores = store.map((e) => cosine(qvec, e.embedding))
+    if (qvec) semScores = store.map((e) => (Array.isArray(e.embedding) ? cosine(qvec, e.embedding) : null))
   }
 
   const scored = store
     .map((e, i) => {
       const recency = Math.exp(-(now - new Date(e.createdAt || now).getTime()) / HALF_LIFE)
-      // semantic (cosine 0..1) is the authoritative signal when available;
-      // lexical (normalized) is only a fallback when the embed service is down.
-      const base = semScores ? semScores[i] : lexScores[i] / maxLex
-      if (semScores && semScores[i] < SEM_THRESHOLD) return null // filter out irrelevant
-      if (!semScores && base <= 0) return null
-      const total = base * (0.8 + 0.2 * recency)
-      return { e, s: total }
+      if (semScores) {
+        const c = semScores[i]
+        if (c == null) {
+          // this doc lacks a persisted embedding -> lexical fallback for it alone
+          const base = lexScores[i] / maxLex
+          if (base <= 0) return null
+          return { e, s: base * (0.8 + 0.2 * recency) }
+        }
+        if (c < SEM_THRESHOLD) return null // filter out semantically irrelevant
+        return { e, s: c * (0.8 + 0.2 * recency) }
+      }
+      // no embedding service at all -> lexical for every doc
+      const base = lexScores[i] / maxLex
+      if (base <= 0) return null
+      return { e, s: base * (0.8 + 0.2 * recency) }
     })
     .filter(Boolean)
     .sort((a, b) => b.s - a.s)
