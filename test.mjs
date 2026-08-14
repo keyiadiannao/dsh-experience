@@ -23,14 +23,14 @@ const e1 = addExperience(tmp, { problem: 'zstd 解码 session.jsonl.zstd 失败'
 const e2 = addExperience(tmp, { problem: 'PowerShell Set-Content 写文件带 BOM', solution: '用 Python open(..., encoding=utf-8) 重写去掉 BOM', keywords: ['BOM', 'PowerShell', '编码'], sourceSession: 's2' })
 ok(e1.id && e2.id, '添加两条经验成功')
 
-const hits = search(loadStore(tmp), 'zstd 解码 session 文件', 5)
+const hits = await search(loadStore(tmp), 'zstd 解码 session 文件', 5)
 ok(hits.length >= 1, '检索 zstd 解码有结果')
 ok(hits[0].problem.includes('zstd'), `最相关的是 zstd 经验（实际 "${hits[0].problem}"）`)
 
-const hits2 = search(loadStore(tmp), '写文件出现 BOM 乱码', 5)
+const hits2 = await search(loadStore(tmp), '写文件出现 BOM 乱码', 5)
 ok(hits2.length >= 1 && hits2[0].problem.includes('BOM'), `检索 BOM 有结果（实际 "${hits2[0]?.problem}"）`)
 
-const none = search(loadStore(tmp), '完全无关的量子计算', 5)
+const none = await search(loadStore(tmp), '完全无关的量子计算', 5)
 ok(none.length === 0, '无关查询返回空')
 
 console.log('--- 持久化 ---')

@@ -58,18 +58,18 @@ const TOOLS = [
 
 function toolResult(text) { return { content: [{ type: 'text', text }] } }
 
-function callTool(name, args = {}) {
+async function callTool(name, args = {}) {
   switch (name) {
     case 'search_experience': {
       const store = loadStore(STORE)
       const topk = Number.isFinite(args.topk) ? args.topk : 5
-      const hits = search(store, args.problem, topk)
+      const hits = await search(store, args.problem, topk)
       if (hits.length === 0) return toolResult(JSON.stringify({ found: false, count: store.length, note: '知识库中无相关经验' }, null, 2))
       return toolResult(JSON.stringify({ found: true, count: hits.length, results: hits.map((h) => ({ problem: h.problem, solution: h.solution, keywords: h.keywords, score: h.score, sourceSession: h.sourceSession })) }, null, 2))
     }
     case 'add_experience': {
       const e = addExperience(STORE, { problem: args.problem, solution: args.solution, keywords: args.keywords || [] })
-      return toolResult(JSON.stringify({ added: true, id: e.id, problem: e.problem }, null, 2))
+      return toolResult(JSON.stringify({ added: !e.duplicate && !e.updated, updated: e.updated === true, duplicate: e.duplicate === true, id: e.id, problem: e.problem }, null, 2))
     }
     case 'list_experiences': {
       let store = loadStore(STORE)

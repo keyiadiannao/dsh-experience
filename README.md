@@ -17,9 +17,23 @@
 
 ## 核心原则
 
-- **运行时零 LLM**:检索是纯词法(关键词 + 中文 bigram),查询时不花任何 token;
+- **运行时零 LLM**:检索默认是纯词法(IDF 加权 + 中文 bigram),查询时不花任何 token;
+- **可选本地语义检索**:启动本地 embedding 服务(见下)后,检索升级为语义匹配
+  (bge-large-zh,本地 GPU/CPU,零云端成本),解决同义词/表述差异;服务未启动时
+  自动降级词法;
 - **离线才用大模型**:只有 `extract.mjs` 提取经验时调 flash(批量、事后);
-- **自主进化**:`extract.mjs` + `add_experience` 持续沉淀,库随任务增长。
+- **自主进化**:`extract.mjs` + `add_experience` 持续沉淀,库随任务增长;重复经验自动去重。
+
+## 语义检索(可选,本地 embedding)
+
+缓存里若已有 `BAAI/bge-large-zh-v1.5`(或联网可下载),启动本地服务:
+
+```bash
+python embed-server.py          # 默认 127.0.0.1:8001,需 transformers+torch
+```
+
+`store.mjs` 检测到该服务后,检索从"词法"自动升级为"语义"(bge 中文 embedding +
+query/doc 分离 + 余弦相似度,阈值 0.45 过滤无关,recency 微调);服务挂了则回退词法。
 
 ## 用法
 
