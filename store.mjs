@@ -98,6 +98,49 @@ export function cosine(a, b) {
   return denom > 0 ? dot / denom : 0
 }
 
+/** Embed a batch of DOCS (no query instruction) — for persistent doc embeddings. */
+export async function embedTexts(texts) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 30000)
+  try {
+    const r = await fetch(EMBED_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ texts }),
+      signal: ctrl.signal,
+    })
+    if (!r.ok) return null
+    const j = await r.json()
+    return Array.isArray(j.vectors) ? j.vectors : null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Embed a single QUERY (with the bge instruction).  Returns vector or null. */
+export async function embedQueryOnly(query) {
+  const emb = await embedQueryDocs(query, [])
+  return emb && Array.isArray(emb.query) ? emb.query : null
+}
+
+/**
+ * Ensure every experience has a persisted `embedding` (doc embedding of
+ * problem+solution).  Offline: run after extraction/dedupe so that search never
+ * re-embeds the whole corpus.  Returns number embedded, or -1 if service down.
+ */
+export async function ensureEmbeddings(file) {
+  const store = loadStore(file)
+  const missing = store.filter((e) => !Array.isArray(e.embedding))
+  if (missing.length === 0) return 0
+  const vecs = await embedTexts(missing.map((e) => `${e.problem} ${e.solution}`))
+  if (!vecs || vecs.length !== missing.length) return -1
+  missing.forEach((e, i) => { e.embedding = vecs[i] })
+  saveStore(file, store)
+  return missing.length
+}
+
 export function loadStore(file) {
   const out = []
   try {
@@ -110,10 +153,14 @@ export function loadStore(file) {
 }
 
 export function saveStore(file, experiences) {
-  fs.writeFileSync(file, experiences.map((e) => JSON.stringify(e)).join('\n') + (experiences.length ? '\n' : ''), 'utf8')
+  // atomic write: temp + rename, so concurrent readers never see a torn file
+  const content = experiences.map((e) => JSON.stringify(e)).join('\n') + (experiences.length ? '\n' : '')
+  const tmp = file + '.tmp'
+  fs.writeFileSync(tmp, content, 'utf8')
+  fs.renameSync(tmp, file)
 }
 
-export function addExperience(file, exp, idGen = Date.now) {
+export async function addExperience(file, exp, idGen = Date.now) {
   const store = loadStore(file)
   // near-identical problem already present?
   const dup = store.find((e) => similarity(e.problem, exp.problem) > 0.7)
@@ -128,6 +175,8 @@ export function addExperience(file, exp, idGen = Date.now) {
       dup.sourceSession = exp.sourceSession || dup.sourceSession
       dup.updatedAt = new Date().toISOString()
       dup.createdAt = dup.updatedAt // refresh recency: this is now the current method
+      const vecs = await embedTexts([`${dup.problem} ${dup.solution}`])
+      if (vecs && vecs[0]) dup.embedding = vecs[0]
       saveStore(file, store)
       return { ...dup, updated: true }
     }
@@ -141,6 +190,8 @@ export function addExperience(file, exp, idGen = Date.now) {
     sourceSession: exp.sourceSession || '',
     createdAt: exp.createdAt || new Date().toISOString(),
   }
+  const vecs = await embedTexts([`${e.problem} ${e.solution}`])
+  if (vecs && vecs[0]) e.embedding = vecs[0]
   store.push(e)
   saveStore(file, store)
   return e
@@ -156,14 +207,12 @@ export async function search(store, query, k = 5) {
   const lexScores = store.map((e) => score(e, qt, idf))
   const maxLex = Math.max(...lexScores, 1e-6)
 
-  // semantic scores (optional; null if embed service down)
+  // semantic scores: embed ONLY the query, reuse persisted doc embeddings
+  // (ensureEmbeddings() precomputes them; no corpus re-embedding per query)
   let semScores = null
-  if (store.length > 0) {
-    const docs = store.map((e) => `${e.problem} ${e.solution}`)
-    const emb = await embedQueryDocs(query, docs)
-    if (emb && emb.docs.length === store.length) {
-      semScores = store.map((_, i) => cosine(emb.query, emb.docs[i]))
-    }
+  if (store.length > 0 && store.every((e) => Array.isArray(e.embedding))) {
+    const qvec = await embedQueryOnly(query)
+    if (qvec) semScores = store.map((e) => cosine(qvec, e.embedding))
   }
 
   const scored = store

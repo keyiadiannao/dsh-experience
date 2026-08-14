@@ -19,8 +19,8 @@ ok(tokenize('解码').length >= 1, '中文分词非空')
 ok(tokenize('解码').includes('解码'), '中文单字被保留')
 
 console.log('--- 添加 + 检索 ---')
-const e1 = addExperience(tmp, { problem: 'zstd 解码 session.jsonl.zstd 失败', solution: '用 node:zlib 的 zstdDecompressSync 逐 frame 扫描解码', keywords: ['zstd', '解码', 'frame'], sourceSession: 's1' })
-const e2 = addExperience(tmp, { problem: 'PowerShell Set-Content 写文件带 BOM', solution: '用 Python open(..., encoding=utf-8) 重写去掉 BOM', keywords: ['BOM', 'PowerShell', '编码'], sourceSession: 's2' })
+const e1 = await addExperience(tmp, { problem: 'zstd 解码 session.jsonl.zstd 失败', solution: '用 node:zlib 的 zstdDecompressSync 逐 frame 扫描解码', keywords: ['zstd', '解码', 'frame'], sourceSession: 's1' })
+const e2 = await addExperience(tmp, { problem: 'PowerShell Set-Content 写文件带 BOM', solution: '用 Python open(..., encoding=utf-8) 重写去掉 BOM', keywords: ['BOM', 'PowerShell', '编码'], sourceSession: 's2' })
 ok(e1.id && e2.id, '添加两条经验成功')
 
 const hits = await search(loadStore(tmp), 'zstd 解码 session 文件', 5)

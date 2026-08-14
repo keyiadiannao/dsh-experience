@@ -68,7 +68,7 @@ async function callTool(name, args = {}) {
       return toolResult(JSON.stringify({ found: true, count: hits.length, results: hits.map((h) => ({ problem: h.problem, solution: h.solution, keywords: h.keywords, score: h.score, sourceSession: h.sourceSession })) }, null, 2))
     }
     case 'add_experience': {
-      const e = addExperience(STORE, { problem: args.problem, solution: args.solution, keywords: args.keywords || [] })
+      const e = await addExperience(STORE, { problem: args.problem, solution: args.solution, keywords: args.keywords || [] })
       return toolResult(JSON.stringify({ added: !e.duplicate && !e.updated, updated: e.updated === true, duplicate: e.duplicate === true, id: e.id, problem: e.problem }, null, 2))
     }
     case 'list_experiences': {

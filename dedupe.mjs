@@ -61,3 +61,8 @@ for (const group of merged) {
 kept.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 saveStore(STORE, kept)
 console.log(`\nwritten ${kept.length} experiences to experience.jsonl`)
+
+// re-embed after merge (some kept entries lost their embedding via {...spread})
+const { ensureEmbeddings } = await import('./store.mjs')
+const n = await ensureEmbeddings(STORE)
+console.log(`ensured embeddings: ${n < 0 ? 'embed-server down (lexical fallback only)' : `${n} embedded`}`)

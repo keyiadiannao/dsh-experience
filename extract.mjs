@@ -130,7 +130,7 @@ async function processSession(sess) {
   if (result.error || !Array.isArray(result.experiences)) { console.log(`  [skip] ${sess.name}: ${result.error || 'no experiences'}`); return 0 }
   const before = loadStore(STORE).length
   for (const e of result.experiences) {
-    if (e.problem && e.solution) addExperience(STORE, { ...e, sourceSession: sess.name })
+    if (e.problem && e.solution) await addExperience(STORE, { ...e, sourceSession: sess.name })
   }
   const after = loadStore(STORE).length
   console.log(`  [ok] ${sess.name}: +${after - before} experiences (${task.slice(0, 40)})`)
